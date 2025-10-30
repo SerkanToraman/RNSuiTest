@@ -1,10 +1,51 @@
+// Import polyfill first, before any other imports that might use crypto
+import "react-native-get-random-values";
+
+import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+
 import { Button } from "@rneui/themed";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
-import { getAllBalances, unsafePay } from "../../lib/sui";
+import {
+  dryRunTransactionBlock,
+  executeTransactionBlock,
+  getAllBalances,
+  unsafePay,
+} from "../../lib/sui";
 import { useAuthLoading, useAuthSession, useLogoutUser } from "../../stores";
 
+// Function to create a new keypair with error handling and retry logic
+const createKeypair = async (): Promise<Ed25519Keypair | null> => {
+  try {
+    const keypair = new Ed25519Keypair();
+    console.log("keypair created successfully", keypair);
+    return keypair;
+  } catch (error) {
+    console.error("Error creating keypair:", error);
+
+    // Retry after a short delay
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        try {
+          const retryKeypair = new Ed25519Keypair();
+          console.log("keypair created on retry", retryKeypair);
+          resolve(retryKeypair);
+        } catch (retryError) {
+          console.error("Error creating keypair (retry):", retryError);
+          resolve(null);
+        }
+      }, 100);
+    });
+  }
+};
+
 export default function HomeScreen() {
+  const rpcUrl = getFullnodeUrl("testnet");
+  const client = new SuiClient({ url: rpcUrl });
+
+  const [keypair, setKeypair] = useState<Ed25519Keypair | null>(null);
+
   const session = useAuthSession();
   const isLoading = useAuthLoading();
   const logoutUser = useLogoutUser();
@@ -13,6 +54,34 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [payResult, setPayResult] = useState<any>(null);
   const [payLoading, setPayLoading] = useState(false);
+  const [dryRunResult, setDryRunResult] = useState<any>(null);
+  const [coins, setCoins] = useState<any>(null);
+
+  // Function to initialize keypair
+  const initializeKeypair = async () => {
+    const newKeypair = await createKeypair();
+    setKeypair(newKeypair);
+  };
+
+  // Move the async code to useEffect
+  useEffect(() => {
+    // Use setTimeout to ensure polyfill is loaded
+    setTimeout(initializeKeypair, 0);
+
+    const fetchCoins = async () => {
+      try {
+        const coinsData = await client.getCoins({
+          owner:
+            "0xd1cb71c7e5990542ae1a0c4f403c6e6edbf4e37a076bacde40b1b0ce4906fd01",
+        });
+        setCoins(coinsData);
+      } catch (error) {
+        console.error("Error fetching coins:", error);
+      }
+    };
+
+    fetchCoins();
+  }, []);
 
   const handleLogout = async () => {
     await logoutUser();
@@ -50,6 +119,38 @@ export default function HomeScreen() {
       console.log(result);
       if (result.success) {
         setPayResult(result.data);
+
+        // Extract txBytes from result.data and run dry run
+        if (result.data && result.data.txBytes) {
+          const dryRunResult = await dryRunTransactionBlock(
+            result.data.txBytes
+          );
+          console.log("Dry run result:", dryRunResult);
+          console.log("Signature:", process.env.EXPO_PUBLIC_SIGNATURE);
+          if (dryRunResult.success) {
+            setDryRunResult(dryRunResult.data);
+
+            // Use private key directly (replace with your actual private key)
+            const privateKeyHex = process.env.EXPO_PUBLIC_BASE_64_KEY;
+
+            // Convert hex private key to Uint8Array
+            if (!privateKeyHex) {
+              console.error("No private key found in environment variables");
+              return;
+            }
+
+            const executeResult = await executeTransactionBlock(
+              result.data.txBytes,
+              [process.env.EXPO_PUBLIC_SIGNATURE as string],
+              {},
+              "WaitForLocalExecution"
+            );
+            console.log("Execute result:", executeResult);
+          } else {
+            console.error("Dry run failed:", dryRunResult.error);
+          }
+        }
+
         Alert.alert("Success", "Unsafe pay transaction created successfully!");
       } else {
         Alert.alert(
@@ -69,6 +170,7 @@ export default function HomeScreen() {
       <Text>Session: {session ? "Active" : "No session"}</Text>
       <Text>Loading: {isLoading ? "Yes" : "No"}</Text>
       <Text>Home</Text>
+      <Text>Coins: {coins ? JSON.stringify(coins) : "No coins"}</Text>
 
       <Button
         title="Get All Balances"
@@ -121,12 +223,30 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <Button
+      {dryRunResult && (
+        <View
+          style={{
+            marginTop: 20,
+            padding: 15,
+            backgroundColor: "#f0f8ff",
+            borderRadius: 8,
+          }}
+        >
+          <Text style={{ fontSize: 16, fontWeight: "bold", marginBottom: 10 }}>
+            Dry Run Result:
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: "monospace" }}>
+            {JSON.stringify(dryRunResult, null, 2)}
+          </Text>
+        </View>
+      )}
+
+      {/* <Button
         title="Logout"
         onPress={handleLogout}
         disabled={isLoading}
         style={{ marginTop: 20 }}
-      />
+      /> */}
     </ScrollView>
   );
 }

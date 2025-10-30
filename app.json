@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "traveller",
-    "slug": "traveller",
+    "name": "enoki-mobile",
+    "slug": "enoki-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -10,10 +10,18 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "io.traveller",
+      "bundleIdentifier": "app.enokimobile",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.859107764323-hcpb8uhr4poimijd9pthffqfr5k6m00i"
+            ]
+          }
+        ]
+      },
+      "appleTeamId": "X67BW58AR9"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +31,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "app.enokimobile"
     },
     "web": {
       "output": "static",
@@ -43,6 +52,12 @@
           }
         }
       ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.859107764323-hcpb8uhr4poimijd9pthffqfr5k6m00i"
+        }
+      ],
       "expo-localization"
     ],
     "experiments": {
@@ -52,9 +67,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "6ea52561-4214-4151-a26a-09b90a75f085"
+        "projectId": "3ca5b9ed-cc79-4ba7-9434-5b6c03738403"
       }
     },
-    "owner": "eduasis-language-learning"
+    "owner": "serkantoraman"
   }
 }

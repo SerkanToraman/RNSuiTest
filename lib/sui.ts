@@ -60,3 +60,37 @@ export const unsafePay = async (
     gasBudget,
   ]);
 };
+
+// Dry run transaction block to get execution effects without committing to chain
+export const dryRunTransactionBlock = async (txBytes: string) => {
+  const rpcUrl = "https://fullnode.testnet.sui.io:443";
+
+  return await makeRpcCall(rpcUrl, "sui_dryRunTransactionBlock", [txBytes]);
+};
+
+// Execute transaction block
+export const executeTransactionBlock = async (
+  txBytes: string,
+  signatures: string[],
+  options: {
+    showInput?: boolean;
+    showRawInput?: boolean;
+    showEffects?: boolean;
+    showEvents?: boolean;
+    showObjectChanges?: boolean;
+    showBalanceChanges?: boolean;
+    showRawEffects?: boolean;
+  } = {},
+  requestType:
+    | "WaitForEffectsCert"
+    | "WaitForLocalExecution" = "WaitForLocalExecution"
+) => {
+  const rpcUrl = "https://fullnode.testnet.sui.io:443";
+
+  return await makeRpcCall(rpcUrl, "sui_executeTransactionBlock", [
+    txBytes,
+    signatures,
+    options,
+    requestType,
+  ]);
+};
