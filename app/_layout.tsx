@@ -1,8 +1,7 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
 import "react-native-reanimated";
-import { useAuthSession, useInitializeAuthListener } from "../stores";
+import { useAuthUser } from "../stores";
 import { Splash } from "./splash";
 
 export const unstable_settings = {
@@ -19,22 +18,22 @@ export default function Root() {
 }
 
 function RootNavigator() {
-  const session = useAuthSession();
-  const initializeAuthListener = useInitializeAuthListener();
+  const user = useAuthUser();
+  // const initializeAuthListener = useInitializeAuthListener();
 
-  useEffect(() => {
-    initializeAuthListener();
-  }, [initializeAuthListener]);
+  // useEffect(() => {
+  //   initializeAuthListener();
+  // }, [initializeAuthListener]);
 
   return (
     <>
       <Stack>
-        <Stack.Protected guard={!!session}>
+        <Stack.Protected guard={!!user}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         </Stack.Protected>
 
-        <Stack.Protected guard={!session}>
-          <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Protected guard={!user}>
+          <Stack.Screen name="(auth)/login" options={{ headerShown: false }} />
         </Stack.Protected>
       </Stack>
       <StatusBar style="auto" />
