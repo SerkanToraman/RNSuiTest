@@ -1,77 +1,142 @@
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { Button } from "@rneui/themed";
+import * as Google from "expo-auth-session/providers/google";
 import { jwtDecode } from "jwt-decode";
 import React, { useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { getNonce, getZkLogin, makeEphemeral } from "../../lib/enoki";
-import { useAuthLoading, useAuthUser, useLoginUser } from "../../stores";
+import { getNonce, getZkLoginAddresses, makeEphemeral } from "../../lib/enoki";
 
-export default function Auth() {
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const user = useAuthUser();
-  const isLoading = useAuthLoading();
-  const loginUser = useLoginUser();
+export default function LoginScreen() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
+    scopes: ["openid", "profile", "email"],
+    // Remove responseType - let it default to "code" for iOS
+    // The provider will auto-exchange the code for id_token with nonce included
+  });
 
   useEffect(() => {
-    // Configure Google Sign-In
-    GoogleSignin.configure({
-      iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
-      offlineAccess: false,
-    });
-  }, []);
-
-  const handleGoogleLogin = async () => {
-    try {
-      console.log("Google login pressed");
-
-      const { keypair, publicKey } = makeEphemeral();
-      console.log("Ephemeral keypair:", keypair);
-      console.log("Ephemeral public key:", publicKey);
-
-      const nonce = await getNonce("testnet", publicKey);
-      console.log("Nonce:", nonce);
-
-      // Check if Google Play Services are available
-      await GoogleSignin.hasPlayServices();
-
-      // STEP 2: Sign in with Google (let Google generate its own nonce)
-      const userInfo = await GoogleSignin.signIn({ nonce: nonce.data.nonce });
-
-      if (userInfo.user) {
-        const googleUser = userInfo.user;
-        console.log("Google login successful:", googleUser);
-
-        // Get the JWT token from Google Sign-In
-        const tokens = await GoogleSignin.getTokens();
-        const jwt = tokens.idToken;
-        console.log("JWT token:", jwt);
-
-        // Extract nonce from JWT
-        const decodedJWT = jwtDecode(jwt) as any;
-        const nonce = decodedJWT.nonce;
-        console.log("Extracted nonce from JWT:", nonce);
-
-        // STEP 3: Get ZKLogin user data using just the JWT
-        const zkLoginData = await getZkLogin(jwt);
-
-        console.log("ZKLogin user data:", zkLoginData);
-      }
-    } catch (error: any) {
-      console.error("Google Sign In Error:", error);
+    if (response?.type === "success") {
+      handleResponse();
+    } else if (response?.type === "error") {
+      setError(response.error?.message || "Authentication failed");
+      setIsLoading(false);
       Alert.alert(
         "Sign-In Error",
-        error.message ||
-          "Something went wrong with Google Sign-In. Please try again."
+        response.error?.message || "Authentication failed"
       );
+    } else if (response?.type === "cancel") {
+      setIsLoading(false);
+    }
+  }, [response]);
+
+  const handleResponse = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (response?.type === "success") {
+        // When using code flow, the id_token is in response.authentication.idToken
+        // or response.params.id_token (after auto-exchange)
+        const idToken =
+          response.authentication?.idToken || response.params.id_token;
+
+        if (idToken) {
+          const decoded = jwtDecode(idToken) as any;
+
+          console.log("Google login successful!");
+          console.log("User:", {
+            id: decoded.sub || decoded.id,
+            email: decoded.email,
+            name: decoded.name || decoded.email,
+            picture: decoded.picture || null,
+          });
+          console.log("ID Token:", idToken);
+          console.log("Nonce in JWT:", decoded.nonce);
+
+          // Get ZKLogin addresses
+          try {
+            const addressesResponse = await getZkLoginAddresses(idToken);
+            console.log("ZKLogin addresses:", addressesResponse.data.addresses);
+
+            if (
+              addressesResponse.data.addresses &&
+              addressesResponse.data.addresses.length > 0
+            ) {
+              const addresses = addressesResponse.data.addresses;
+              console.log("User addresses:");
+              addresses.forEach((addr, index) => {
+                console.log(`Address ${index + 1}:`, addr.address);
+                console.log(`  Salt:`, addr.salt);
+                console.log(`  Public Key:`, addr.publicKey);
+                console.log(`  Client ID:`, addr.clientId);
+                console.log(`  Legacy:`, addr.legacy);
+              });
+
+              console.log(
+                "Signed in successfully! Address:",
+                addresses[0].address
+              );
+            } else {
+              console.log("Signed in successfully! (No addresses found)");
+            }
+          } catch (addressError: any) {
+            console.error("Error getting ZKLogin addresses:", addressError);
+            console.log("Signed in successfully! (Error getting addresses)");
+          }
+        } else {
+          throw new Error("No ID token received");
+        }
+      }
+    } catch (error: any) {
+      console.error("Error handling auth response:", error);
+      const errorMessage =
+        error.message || "Something went wrong with Google Sign-In.";
+      setError(errorMessage);
+      Alert.alert("Sign-In Error", errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Show error alerts when login error occurs
-  useEffect(() => {
-    if (loginError) {
-      Alert.alert("Login Error", loginError);
+  const handleGoogleLogin = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // STEP 1: Get nonce from Enoki
+      const { keypair, publicKey } = makeEphemeral();
+      console.log("Ephemeral public key:", publicKey);
+
+      const nonceResponse = await getNonce("testnet", publicKey);
+      console.log("Nonce response:", nonceResponse);
+      const enokiNonce = nonceResponse.data.nonce;
+      console.log("Enoki nonce:", enokiNonce);
+
+      if (!request) {
+        throw new Error("Auth request not ready. Please try again.");
+      }
+
+      // STEP 2: Set the nonce directly on the request object
+      // The GoogleAuthRequest class has a nonce property
+      (request as any).nonce = enokiNonce;
+
+      // STEP 3: Also set it in extraParams if available
+      if ((request as any).extraParams) {
+        (request as any).extraParams.nonce = enokiNonce;
+      }
+
+      await promptAsync();
+    } catch (error: any) {
+      console.error("Google Sign In Error:", error);
+      const errorMessage =
+        error.message || "Something went wrong with Google Sign-In.";
+      setError(errorMessage);
+      setIsLoading(false);
+      Alert.alert("Sign-In Error", errorMessage);
     }
-  }, [loginError]);
+  };
 
   return (
     <View style={styles.container}>
@@ -83,7 +148,7 @@ export default function Auth() {
       <View style={styles.buttonContainer}>
         <Button
           title="Sign in with Google"
-          disabled={isLoading}
+          disabled={isLoading || !request}
           onPress={handleGoogleLogin}
           loading={isLoading}
           buttonStyle={styles.googleButton}
@@ -95,14 +160,8 @@ export default function Auth() {
             size: 20,
           }}
         />
+        {error && <Text style={styles.errorText}>{error}</Text>}
       </View>
-
-      {user && (
-        <View style={styles.userInfo}>
-          <Text style={styles.userText}>Welcome, {user.email}!</Text>
-          <Text style={styles.userEmail}>You are successfully logged in</Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -143,22 +202,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  userInfo: {
-    marginTop: 30,
-    padding: 20,
-    backgroundColor: "#e8f5e8",
-    borderRadius: 8,
-    width: "100%",
-    maxWidth: 300,
-  },
-  userText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#2e7d32",
-    marginBottom: 5,
-  },
-  userEmail: {
+  errorText: {
+    color: "#dc3545",
     fontSize: 14,
-    color: "#666",
+    marginTop: 10,
+    textAlign: "center",
   },
 });
