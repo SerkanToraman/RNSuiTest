@@ -10,6 +10,19 @@ interface GoogleUser {
   email: string;
   name: string;
   photo?: string;
+  randomness?: string;
+  ephemeralPublicKey?: string;
+  ephemeralKeypair?: Uint8Array;
+  maxEpoch?: number;
+  idToken?: string;
+  address?: string;
+  addresses?: {
+    address: string;
+    salt: string;
+    publicKey: string;
+    clientId: string;
+    legacy: boolean;
+  }[];
 }
 
 interface AuthState {
