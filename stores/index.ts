@@ -8,6 +8,7 @@ export {
   useReset,
   useSetLoading,
   useSetUser,
+  type GoogleUser,
 } from "./authStore";
 
 // You can add more stores here as your app grows

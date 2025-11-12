@@ -14,7 +14,7 @@ export default function Nft() {
   const rpcUrl = getFullnodeUrl("testnet");
   const client = useMemo(() => new SuiClient({ url: rpcUrl }), [rpcUrl]);
   const user = useAuthUser();
-
+  console.log("user", user);
   const [nftLoading, setNftLoading] = useState(false);
   const [createdNft, setCreatedNft] = useState<any>(null);
 
@@ -56,7 +56,6 @@ export default function Nft() {
         [user.address],
         [`${packageId}::hero::create_hero`]
       );
-      console.log("user", user.ephemeralKeypair);
 
       const zkp = await getZkLoginZKP(
         user.ephemeralPublicKey,
