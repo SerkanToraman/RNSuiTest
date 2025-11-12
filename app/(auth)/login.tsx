@@ -1,6 +1,6 @@
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { Button } from "@rneui/themed";
 import { Buffer } from "buffer";
-import * as Google from "expo-auth-session/providers/google";
 import { router } from "expo-router";
 import { jwtDecode } from "jwt-decode";
 import React, { useEffect, useState } from "react";
@@ -9,160 +9,96 @@ import { getNonce, getZkLoginAddresses, makeEphemeral } from "../../lib/enoki";
 import type { GoogleUser } from "../../stores";
 import { useAuthStore } from "../../stores";
 
-type EphemeralData = {
-  randomness: string;
-  ephemeralPublicKey: string;
-  maxEpoch: number;
-  secretKey: string;
-};
-
 export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setUser = useAuthStore((state) => state.setUser);
-  const [ephemeralData, setEphemeralData] = useState<EphemeralData | null>(
-    null
-  );
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
-    scopes: ["openid", "profile", "email"],
-    // Remove responseType - let it default to "code" for iOS
-    // The provider will auto-exchange the code for id_token with nonce included
-  });
 
   useEffect(() => {
-    if (!response) {
-      return;
-    }
-
-    if (response.type === "success") {
-      const handleSuccess = async () => {
-        try {
-          setIsLoading(true);
-          setError(null);
-
-          const idToken =
-            response.authentication?.idToken || response.params.id_token;
-
-          if (!idToken) {
-            throw new Error("No ID token received");
-          }
-
-          if (!ephemeralData) {
-            throw new Error(
-              "Missing ephemeral session data. Please try again."
-            );
-          }
-
-          const decoded = jwtDecode(idToken) as any;
-          const baseUser: GoogleUser = {
-            id: decoded.sub || decoded.id,
-            email: decoded.email,
-            name: decoded.name || decoded.email,
-            photo: decoded.picture || null,
-            randomness: ephemeralData?.randomness,
-            ephemeralPublicKey: ephemeralData?.ephemeralPublicKey,
-            ephemeralKeypair: ephemeralData?.secretKey,
-            maxEpoch: ephemeralData?.maxEpoch,
-            idToken,
-          };
-
-          let finalUser = baseUser;
-
-          try {
-            const addressesResponse = await getZkLoginAddresses(idToken);
-
-            if (
-              addressesResponse.data.addresses &&
-              addressesResponse.data.addresses.length > 0
-            ) {
-              const addresses = addressesResponse.data.addresses;
-              finalUser = {
-                ...baseUser,
-                address: addresses[0].address,
-                addresses,
-              };
-            } else {
-              throw new Error("No addresses found");
-            }
-          } catch (addressError: any) {
-            console.error("Error getting ZKLogin addresses:", addressError);
-            throw new Error("Error getting ZKLogin addresses");
-          }
-
-          setUser(finalUser);
-          router.replace("/(tabs)");
-          setEphemeralData(null);
-        } catch (error: any) {
-          console.error("Error handling auth response:", error);
-          const errorMessage =
-            error.message || "Something went wrong with Google Sign-In.";
-          setError(errorMessage);
-          Alert.alert("Sign-In Error", errorMessage);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
-      handleSuccess();
-    } else if (response.type === "error") {
-      setError(response.error?.message || "Authentication failed");
-      setIsLoading(false);
-      Alert.alert(
-        "Sign-In Error",
-        response.error?.message || "Authentication failed"
-      );
-    } else if (response.type === "cancel") {
-      setIsLoading(false);
-    }
-  }, [response, setUser, ephemeralData]);
+    GoogleSignin.configure({
+      scopes: ["openid", "profile", "email"],
+      iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
+      offlineAccess: false,
+    });
+  }, []);
 
   const handleGoogleLogin = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // STEP 1: Get nonce from Enoki
       const { kp, publicKey } = makeEphemeral();
-
       const nonceResponse = await getNonce("testnet", publicKey);
 
       const enokiNonce = nonceResponse.data.nonce;
-
       const randomness = nonceResponse.data.randomness;
       const maxEpoch = nonceResponse.data.maxEpoch;
+
+      if (!enokiNonce) {
+        throw new Error("Failed to retrieve nonce from Enoki.");
+      }
+
       const secretKeyBytes = kp.getSecretKey();
       const secretKey = Buffer.from(secretKeyBytes).toString("base64");
-
-      if (!request) {
-        throw new Error("Auth request not ready. Please try again.");
-      }
-
-      setEphemeralData({
-        randomness,
-        ephemeralPublicKey: publicKey,
-        maxEpoch,
-        secretKey,
+      await GoogleSignin.signOut();
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn({
+        nonce: enokiNonce,
       });
 
-      // STEP 2: Set the nonce directly on the request object
-      // The GoogleAuthRequest class has a nonce property
-      (request as any).nonce = enokiNonce;
+      const idToken = userInfo?.data?.idToken;
 
-      // STEP 3: Also set it in extraParams if available
-      if ((request as any).extraParams) {
-        (request as any).extraParams.nonce = enokiNonce;
+      if (!idToken) {
+        throw new Error("No ID token received from Google.");
       }
 
-      await promptAsync();
-    } catch (error: any) {
-      console.error("Google Sign In Error:", error);
+      const decoded = jwtDecode(idToken) as any;
+
+      const baseUser: GoogleUser = {
+        id: decoded.sub || decoded.id,
+        email: decoded.email,
+        name: decoded.name || decoded.email,
+        photo: decoded.picture || null,
+        randomness,
+        ephemeralPublicKey: publicKey,
+        ephemeralKeypair: secretKey,
+        maxEpoch,
+        idToken,
+      };
+
+      let finalUser = baseUser;
+
+      try {
+        const addressesResponse = await getZkLoginAddresses(idToken);
+
+        if (
+          addressesResponse.data.addresses &&
+          addressesResponse.data.addresses.length > 0
+        ) {
+          const addresses = addressesResponse.data.addresses;
+          finalUser = {
+            ...baseUser,
+            address: addresses[0].address,
+            addresses,
+          };
+        } else {
+          throw new Error("No addresses found");
+        }
+      } catch (addressError: any) {
+        console.error("Error getting ZKLogin addresses:", addressError);
+        throw new Error("Error getting ZKLogin addresses");
+      }
+
+      setUser(finalUser);
+      router.replace("/(tabs)");
+    } catch (err: any) {
+      console.error("Google Sign In Error:", err);
       const errorMessage =
-        error.message || "Something went wrong with Google Sign-In.";
+        err.message || "Something went wrong with Google Sign-In.";
       setError(errorMessage);
-      setIsLoading(false);
       Alert.alert("Sign-In Error", errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -176,7 +112,7 @@ export default function LoginScreen() {
       <View style={styles.buttonContainer}>
         <Button
           title="Sign in with Google"
-          disabled={isLoading || !request}
+          disabled={isLoading}
           onPress={handleGoogleLogin}
           loading={isLoading}
           buttonStyle={styles.googleButton}
