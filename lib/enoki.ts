@@ -45,8 +45,6 @@ async function enoki<T>(
   jwt?: string,
   usePrivateKey: boolean = false
 ): Promise<T> {
-  console.log("enoki", `${ENOKI_BASE}${path}`);
-
   const apiKey = usePrivateKey ? ENOKI_PRIVATE_KEY : ENOKI_PUBLIC_KEY;
 
   const headers: Record<string, string> = {
@@ -88,8 +86,6 @@ export async function getNonce(
   network: SuiNetwork,
   ephemeralPublicKey: string
 ) {
-  console.log("getNonce", network, ephemeralPublicKey);
-
   return enoki<{
     data: {
       nonce: string;
@@ -110,8 +106,6 @@ export async function getNonce(
 }
 
 export async function getZkLogin(jwt: string) {
-  console.log("getZkLogin", { jwt });
-
   return enoki<{
     data: {
       user?: any;
@@ -141,14 +135,6 @@ export async function getZkLoginZKP(
   jwt: string,
   network: SuiNetwork = "testnet"
 ) {
-  console.log("getZkLoginZKP", {
-    ephemeralPublicKey,
-    maxEpoch,
-    randomness,
-    jwt,
-    network,
-  });
-
   return enoki<{
     data: {
       zkp: string;
@@ -174,14 +160,6 @@ export async function sponsorTransaction(
   allowedAddresses: string[] = [],
   allowedMoveCallTargets: string[] = []
 ) {
-  console.log("sponsorTransaction", {
-    transactionBlockKindBytes,
-    network,
-    sender,
-    allowedAddresses,
-    allowedMoveCallTargets,
-  });
-
   return enoki<{
     data: {
       bytes: string;
@@ -211,10 +189,6 @@ export async function signSponsoredTransaction(
   if (!signature) {
     throw new Error("Signature not found");
   }
-  console.log("signSponsoredTransaction", {
-    digest,
-    signature: signature,
-  });
 
   return enoki<{
     data: {

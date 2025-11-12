@@ -5,14 +5,14 @@ import { createJSONStorage, persist } from "zustand/middleware";
 // import { supabase } from "../lib/supabase";
 
 // Simple user interface for Google auth
-interface GoogleUser {
+export interface GoogleUser {
   id: string;
   email: string;
   name: string;
   photo?: string;
   randomness?: string;
   ephemeralPublicKey?: string;
-  ephemeralKeypair?: Uint8Array;
+  ephemeralKeypair?: string;
   maxEpoch?: number;
   idToken?: string;
   address?: string;
