@@ -9,7 +9,7 @@ import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
 import Nft from "../../components/Nft"; // Add this import
-import { useAuthLoading, useAuthUser, useLogoutUser } from "../../stores";
+import { useAuthLoading, useAuthUser, useSignOut } from "../../stores";
 
 export default function HomeScreen() {
   const rpcUrl = getFullnodeUrl("testnet");
@@ -17,7 +17,7 @@ export default function HomeScreen() {
 
   const user = useAuthUser();
   const isLoading = useAuthLoading();
-  const logoutUser = useLogoutUser();
+  const signOut = useSignOut();
 
   const [balances, setBalances] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -46,13 +46,8 @@ export default function HomeScreen() {
   }, [user?.address, client]); // Add client to dependencies
 
   const handleLogout = async () => {
-    const result = await logoutUser();
-    if (result.success) {
-      // Navigate to login screen after successful logout
-      router.replace("/(auth)/login");
-    } else {
-      Alert.alert("Error", result.error || "Failed to logout");
-    }
+    signOut(); // This just clears the state, doesn't return a promise
+    router.replace("/(auth)/login");
   };
 
   const handleGetBalances = async () => {

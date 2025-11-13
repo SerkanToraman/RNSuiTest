@@ -10,18 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.enokimobile",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.859107764323-hcpb8uhr4poimijd9pthffqfr5k6m00i"
-            ]
-          }
-        ]
-      },
-      "appleTeamId": "X67BW58AR9"
+      "bundleIdentifier": "app.enokimobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -30,12 +19,11 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
       "package": "app.enokimobile"
     },
     "web": {
-      "output": "static",
+      "bundler": "metro",
+      "output": "server",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -50,12 +38,6 @@
           "dark": {
             "backgroundColor": "#000000"
           }
-        }
-      ],
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.859107764323-hcpb8uhr4poimijd9pthffqfr5k6m00i"
         }
       ],
       "expo-localization"

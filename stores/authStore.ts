@@ -1,48 +1,55 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-// import type { Session, User } from "@supabase/supabase-js";
+import {
+  AuthError,
+  AuthRequestConfig,
+  DiscoveryDocument,
+  makeRedirectUri,
+  useAuthRequest,
+} from "expo-auth-session";
+import * as WebBrowser from "expo-web-browser";
+import { jwtDecode } from "jwt-decode";
+import { useCallback, useEffect } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-// import { supabase } from "../lib/supabase";
+import { BASE_URL } from "../lib/constant";
+
+WebBrowser.maybeCompleteAuthSession();
+
+const config: AuthRequestConfig = {
+  clientId: "google",
+  scopes: ["openid", "profile", "email"],
+  redirectUri: makeRedirectUri(),
+};
+
+const discovery: DiscoveryDocument = {
+  authorizationEndpoint: `${BASE_URL}/api/auth/authorize`,
+  tokenEndpoint: `${BASE_URL}/api/auth/token`,
+};
 
 // Simple user interface for Google auth
-interface GoogleUser {
+export interface GoogleUser {
   id: string;
   email: string;
   name: string;
   photo?: string;
-  randomness?: string;
-  ephemeralPublicKey?: string;
-  ephemeralKeypair?: Uint8Array;
-  maxEpoch?: number;
-  idToken?: string;
-  address?: string;
-  addresses?: {
-    address: string;
-    salt: string;
-    publicKey: string;
-    clientId: string;
-    legacy: boolean;
-  }[];
+  sub?: string;
+  [key: string]: any; // Allow other JWT claims
 }
 
 interface AuthState {
   user: GoogleUser | null;
-  // session: Session | null;
+  token: string | null;
   isLoading: boolean;
+  error: AuthError | null;
 }
 
 interface AuthActions {
   setUser: (user: GoogleUser | null) => void;
-  // setSession: (session: Session | null) => void;
-  // setAuthState: (user: User | null, session: Session | null) => void;
+  setToken: (token: string | null) => void;
   setLoading: (loading: boolean) => void;
-  loginUser: (
-    email: string,
-    password: string
-  ) => Promise<{ success: boolean; error?: string }>;
-  logoutUser: () => Promise<{ success: boolean; error?: string }>;
-  // fetchSession: () => Promise<{ success: boolean; error?: string }>;
-  // initializeAuthListener: () => void;
+  setError: (error: AuthError | null) => void;
+  signOut: () => void;
+  fetchWithAuth: (url: string, options?: RequestInit) => Promise<Response>;
   reset: () => void;
 }
 
@@ -50,8 +57,9 @@ type AuthStore = AuthState & AuthActions;
 
 const initialState: AuthState = {
   user: null,
-  // session: null,
+  token: null,
   isLoading: false,
+  error: null,
 };
 
 export const useAuthStore = create<AuthStore>()(
@@ -61,84 +69,32 @@ export const useAuthStore = create<AuthStore>()(
 
       setUser: (user) => set({ user }),
 
-      // setSession: (session) => set({ session }),
-
-      // setAuthState: (user, session) => set({ user, session }),
+      setToken: (token) => set({ token }),
 
       setLoading: (isLoading) => set({ isLoading }),
 
-      loginUser: async (email: string, password: string) => {
-        set({ isLoading: true });
-        try {
-          // Mock login for Google users - in real implementation, this would handle ZKLogin
-          const mockUser: GoogleUser = {
-            id: "google_user_" + Date.now(),
-            email: email,
-            name: email.split("@")[0], // Use email prefix as name
-            photo: undefined,
-          };
+      setError: (error) => set({ error }),
 
-          set({
-            user: mockUser,
-            isLoading: false,
-          });
-
-          return { success: true };
-        } catch (error: any) {
-          set({ isLoading: false });
-          return { success: false, error: error.message };
-        }
+      signOut: () => {
+        set({
+          user: null,
+          token: null,
+          isLoading: false,
+          error: null,
+        });
       },
 
-      logoutUser: async () => {
-        set({ isLoading: true });
-        try {
-          set({
-            user: null,
-            isLoading: false,
-          });
-
-          return { success: true };
-        } catch (error: any) {
-          set({ isLoading: false });
-          return { success: false, error: error.message };
-        }
+      fetchWithAuth: async (url: string, options?: RequestInit) => {
+        const { token } = get();
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options?.headers,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        return response;
       },
-
-      // fetchSession: async () => {
-      //   set({ isLoading: true });
-      //   try {
-      //     const { data, error } = await supabase.auth.getSession();
-
-      //     if (error) {
-      //       set({ isLoading: false });
-      //       return { success: false, error: error.message };
-      //     }
-
-      //     set({
-      //       user: data.session?.user ?? null,
-      //       session: data.session,
-      //       isLoading: false,
-      //     });
-
-      //     return { success: true };
-      //   } catch (error: any) {
-      //     set({ isLoading: false });
-      //     return { success: false, error: error.message };
-      //   }
-      // },
-
-      // initializeAuthListener: () => {
-      //   // Initial session fetch
-      //   supabase.auth.getSession().then(({ data: { session } }) => {
-      //     set({ user: session?.user ?? null, session });
-      //   });
-
-      //   // Set up auth state change listener
-      //   supabase.auth.onAuthStateChange((_event, session) => {
-      //     set({ user: session?.user ?? null, session });
-      //   });
-      // },
 
       reset: () => set(initialState),
     }),
@@ -147,7 +103,7 @@ export const useAuthStore = create<AuthStore>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         user: state.user,
-        // session: state.session,
+        token: state.token,
       }),
     }
   )
@@ -160,14 +116,95 @@ export const useAuthLoading = () => useAuthStore((state) => state.isLoading);
 
 // Individual action selectors to prevent re-render issues
 export const useSetUser = () => useAuthStore((state) => state.setUser);
-// export const useSetSession = () => useAuthStore((state) => state.setSession);
-// export const useSetAuthState = () =>
-//   useAuthStore((state) => state.setAuthState);
+export const useSetToken = () => useAuthStore((state) => state.setToken);
 export const useSetLoading = () => useAuthStore((state) => state.setLoading);
-export const useLoginUser = () => useAuthStore((state) => state.loginUser);
-export const useLogoutUser = () => useAuthStore((state) => state.logoutUser);
-// export const useFetchSession = () =>
-//   useAuthStore((state) => state.fetchSession);
-// export const useInitializeAuthListener = () =>
-//   useAuthStore((state) => state.initializeAuthListener);
+export const useSetError = () => useAuthStore((state) => state.setError);
+export const useSignOut = () => useAuthStore((state) => state.signOut);
+export const useFetchWithAuth = () =>
+  useAuthStore((state) => state.fetchWithAuth);
 export const useReset = () => useAuthStore((state) => state.reset);
+
+// Custom hook that combines useAuthRequest with store methods
+export const useGoogleSignIn = () => {
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const error = useAuthStore((state) => state.error);
+  const setUser = useAuthStore((state) => state.setUser);
+  const setToken = useAuthStore((state) => state.setToken);
+  const setLoading = useAuthStore((state) => state.setLoading);
+  const setError = useAuthStore((state) => state.setError);
+  console.log(BASE_URL);
+
+  const [request, response, promptAsync] = useAuthRequest(config, discovery);
+
+  const handleResponse = useCallback(async () => {
+    if (response?.type === "success") {
+      try {
+        setLoading(true);
+        const { code } = response.params;
+
+        // Exchange code for JWT token
+        const formData = new FormData();
+        formData.append("code", code);
+
+        const tokenResponse = await fetch(`${BASE_URL}/api/auth/token`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!tokenResponse.ok) {
+          throw new Error("Failed to exchange code for token");
+        }
+
+        const jwtToken = await tokenResponse.json();
+        setToken(jwtToken);
+
+        // Decode JWT token and map to GoogleUser
+        const decoded = jwtDecode(jwtToken) as any;
+        const user: GoogleUser = {
+          id: decoded.sub || decoded.id,
+          email: decoded.email,
+          name: decoded.name || decoded.email?.split("@")[0] || "User",
+          photo: decoded.picture || null,
+          sub: decoded.sub,
+          ...decoded, // Include all other JWT claims
+        };
+        setUser(user);
+      } catch (e: any) {
+        console.error("Error handling auth response:", e);
+        setError(e as AuthError);
+      } finally {
+        setLoading(false);
+      }
+    } else if (response?.type === "cancel") {
+      // User cancelled - no error needed
+    } else if (response?.type === "error") {
+      setError(response.error as AuthError);
+    }
+  }, [response, setLoading, setToken, setUser, setError]);
+
+  // Handle OAuth response
+  useEffect(() => {
+    handleResponse();
+  }, [handleResponse]);
+
+  const signIn = async () => {
+    try {
+      if (!request) {
+        console.log("No request");
+        return;
+      }
+      await promptAsync();
+    } catch (e: any) {
+      console.error("Sign in error:", e);
+      setError(e as AuthError);
+    }
+  };
+
+  return {
+    request,
+    response,
+    signIn,
+    error,
+    isLoading,
+  };
+};

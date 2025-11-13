@@ -3,11 +3,11 @@ export {
   useAuthLoading,
   useAuthStore,
   useAuthUser,
-  useLoginUser,
-  useLogoutUser,
+  useGoogleSignIn,
   useReset,
   useSetLoading,
   useSetUser,
+  useSignOut,
 } from "./authStore";
 
 // You can add more stores here as your app grows
