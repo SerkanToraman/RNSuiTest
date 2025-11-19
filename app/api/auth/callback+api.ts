@@ -1,4 +1,4 @@
-import { APP_SCHEME, BASE_URL } from "@/utils/constants";
+import { APP_SCHEME, BASE_URL } from "@/lib/constant";
 
 export async function GET(request: Request) {
   const incomingParams = new URLSearchParams(request.url.split("?")[1]);

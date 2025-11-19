@@ -8,12 +8,15 @@ import { useMemo, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { createHero } from "../lib/createHero";
 import { getZkLoginZKP, sponsorTransaction } from "../lib/enoki";
-import { useAuthUser } from "../stores";
+import { useAuthStore, useAuthUser } from "../stores";
 
 export default function Nft() {
   const rpcUrl = getFullnodeUrl("testnet");
   const client = useMemo(() => new SuiClient({ url: rpcUrl }), [rpcUrl]);
   const user = useAuthUser();
+  const idToken = useAuthStore((state) => state.idToken); // Get idToken from store
+  console.log("user", user);
+  
 
   const [nftLoading, setNftLoading] = useState(false);
   const [createdNft, setCreatedNft] = useState<any>(null);
@@ -22,7 +25,7 @@ export default function Nft() {
     if (
       !user?.ephemeralPublicKey ||
       !user?.randomness ||
-      !user?.idToken ||
+      !idToken || // Use idToken from store
       !user?.address
     ) {
       Alert.alert(
@@ -52,17 +55,16 @@ export default function Nft() {
         txBytes,
         "testnet",
         user.address,
-        user.idToken,
+        idToken, // Use idToken from store
         [user.address],
         [`${packageId}::hero::create_hero`]
       );
-      console.log("user", user.ephemeralKeypair);
 
       const zkp = await getZkLoginZKP(
         user.ephemeralPublicKey,
         user.maxEpoch || 2,
         user.randomness,
-        user.idToken,
+        idToken, // Use idToken from store
         "testnet"
       );
 
@@ -100,7 +102,7 @@ export default function Nft() {
           nftLoading ||
           !user?.ephemeralPublicKey ||
           !user?.randomness ||
-          !user?.idToken ||
+          !idToken || // Use idToken from store
           !user?.address
         }
         loading={nftLoading}

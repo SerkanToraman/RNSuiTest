@@ -36,6 +36,7 @@ export default function HomeScreen() {
         const coinsData = await client.getCoins({
           owner: user.address, // Use user's address instead of hardcoded one
         });
+        console.log("coinsData", coinsData);
         setCoins(coinsData);
       } catch (error) {
         console.error("Error fetching coins:", error);

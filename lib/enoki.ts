@@ -45,9 +45,14 @@ async function enoki<T>(
   jwt?: string,
   usePrivateKey: boolean = false
 ): Promise<T> {
-  console.log("enoki", `${ENOKI_BASE}${path}`);
-
   const apiKey = usePrivateKey ? ENOKI_PRIVATE_KEY : ENOKI_PUBLIC_KEY;
+
+  // Add validation
+  if (!apiKey) {
+    throw new Error(
+      `Missing Enoki API key (${usePrivateKey ? "private" : "public"})`
+    );
+  }
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
@@ -66,6 +71,13 @@ async function enoki<T>(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    // Log more details for debugging
+    console.error("Enoki API Error:", {
+      status: res.status,
+      statusText: res.statusText,
+      url: `${ENOKI_BASE}${path}`,
+      errorText: text,
+    });
     throw new Error(text || `Enoki request failed: ${res.status}`);
   }
   return res.json() as Promise<T>;
@@ -88,8 +100,6 @@ export async function getNonce(
   network: SuiNetwork,
   ephemeralPublicKey: string
 ) {
-  console.log("getNonce", network, ephemeralPublicKey);
-
   return enoki<{
     data: {
       nonce: string;

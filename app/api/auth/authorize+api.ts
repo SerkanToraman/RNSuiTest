@@ -3,7 +3,7 @@ import {
   BASE_URL,
   GOOGLE_AUTH_URL,
   GOOGLE_CLIENT_ID,
-} from "@/utils/constants";
+} from "@/lib/constant";
 
 export async function GET(request: Request) {
   if (!GOOGLE_CLIENT_ID) {
