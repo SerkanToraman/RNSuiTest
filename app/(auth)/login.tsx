@@ -1,77 +1,29 @@
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { Button } from "@rneui/themed";
-import { jwtDecode } from "jwt-decode";
-import React, { useEffect, useState } from "react";
+import { router } from "expo-router";
+import React, { useEffect } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { getNonce, getZkLogin, makeEphemeral } from "../../lib/enoki";
-import { useAuthLoading, useAuthUser, useLoginUser } from "../../stores";
+import { useAuthUser } from "../../stores";
+import { useGoogleSignIn } from "../../stores/authStore";
 
-export default function Auth() {
-  const [loginError, setLoginError] = useState<string | null>(null);
+export default function LoginScreen() {
+  const { signIn, isLoading, error } = useGoogleSignIn();
   const user = useAuthUser();
-  const isLoading = useAuthLoading();
-  const loginUser = useLoginUser();
 
+  // Navigate when user is successfully authenticated
   useEffect(() => {
-    // Configure Google Sign-In
-    GoogleSignin.configure({
-      iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
-      offlineAccess: false,
-    });
-  }, []);
-
-  const handleGoogleLogin = async () => {
-    try {
-      console.log("Google login pressed");
-
-      const { keypair, publicKey } = makeEphemeral();
-      console.log("Ephemeral keypair:", keypair);
-      console.log("Ephemeral public key:", publicKey);
-
-      const nonce = await getNonce("testnet", publicKey);
-      console.log("Nonce:", nonce);
-
-      // Check if Google Play Services are available
-      await GoogleSignin.hasPlayServices();
-
-      // STEP 2: Sign in with Google (let Google generate its own nonce)
-      const userInfo = await GoogleSignin.signIn({ nonce: nonce.data.nonce });
-
-      if (userInfo.user) {
-        const googleUser = userInfo.user;
-        console.log("Google login successful:", googleUser);
-
-        // Get the JWT token from Google Sign-In
-        const tokens = await GoogleSignin.getTokens();
-        const jwt = tokens.idToken;
-        console.log("JWT token:", jwt);
-
-        // Extract nonce from JWT
-        const decodedJWT = jwtDecode(jwt) as any;
-        const nonce = decodedJWT.nonce;
-        console.log("Extracted nonce from JWT:", nonce);
-
-        // STEP 3: Get ZKLogin user data using just the JWT
-        const zkLoginData = await getZkLogin(jwt);
-
-        console.log("ZKLogin user data:", zkLoginData);
-      }
-    } catch (error: any) {
-      console.error("Google Sign In Error:", error);
-      Alert.alert(
-        "Sign-In Error",
-        error.message ||
-          "Something went wrong with Google Sign-In. Please try again."
-      );
+    if (user && user.idToken) {
+      setTimeout(() => {
+        router.replace("/(tabs)");
+      }, 100);
     }
-  };
+  }, [user]);
 
-  // Show error alerts when login error occurs
+  // Show error alerts
   useEffect(() => {
-    if (loginError) {
-      Alert.alert("Login Error", loginError);
+    if (error) {
+      Alert.alert("Sign-In Error", error.message || "Authentication failed");
     }
-  }, [loginError]);
+  }, [error]);
 
   return (
     <View style={styles.container}>
@@ -84,7 +36,7 @@ export default function Auth() {
         <Button
           title="Sign in with Google"
           disabled={isLoading}
-          onPress={handleGoogleLogin}
+          onPress={signIn}
           loading={isLoading}
           buttonStyle={styles.googleButton}
           titleStyle={styles.buttonText}
@@ -95,14 +47,8 @@ export default function Auth() {
             size: 20,
           }}
         />
+        {error && <Text style={styles.errorText}>{error.message}</Text>}
       </View>
-
-      {user && (
-        <View style={styles.userInfo}>
-          <Text style={styles.userText}>Welcome, {user.email}!</Text>
-          <Text style={styles.userEmail}>You are successfully logged in</Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -113,7 +59,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#fff",
   },
   header: {
     marginBottom: 40,
@@ -122,8 +68,8 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#333",
     marginBottom: 10,
+    color: "#333",
   },
   subtitle: {
     fontSize: 16,
@@ -135,7 +81,7 @@ const styles = StyleSheet.create({
     maxWidth: 300,
   },
   googleButton: {
-    backgroundColor: "#4285f4",
+    backgroundColor: "#4285F4",
     borderRadius: 8,
     paddingVertical: 12,
   },
@@ -143,22 +89,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  userInfo: {
-    marginTop: 30,
-    padding: 20,
-    backgroundColor: "#e8f5e8",
-    borderRadius: 8,
-    width: "100%",
-    maxWidth: 300,
-  },
-  userText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#2e7d32",
-    marginBottom: 5,
-  },
-  userEmail: {
-    fontSize: 14,
-    color: "#666",
+  errorText: {
+    color: "red",
+    marginTop: 10,
+    textAlign: "center",
   },
 });

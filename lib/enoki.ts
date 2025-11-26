@@ -1,24 +1,16 @@
-// enoki.ts
+import "expo-standard-web-crypto";
+import "react-native-get-random-values";
+import "react-native-url-polyfill/auto";
 
-// --- Polyfills MUST be first ---
-import "expo-standard-web-crypto"; // defines globalThis.crypto + subtle
-import "react-native-get-random-values"; // secure RNG source
-import "react-native-url-polyfill/auto"; // URL & URLSearchParams
-
-// Optional but often needed for Node-style libs (like noble)
 import { toB64 } from "@mysten/bcs";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { Buffer } from "buffer";
 import * as ExpoRandom from "expo-random";
-
-// --- Imports that depend on crypto being ready ---
-import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 if (typeof globalThis.Buffer === "undefined") {
   // @ts-ignore
   globalThis.Buffer = Buffer;
 }
 
-// --- Safety net: fallback getRandomValues via expo-random (rarely needed) ---
-// --- Safety net: fallback getRandomValues via expo-random ---
 (() => {
   const needsRng =
     typeof globalThis.crypto === "undefined" ||
@@ -42,6 +34,7 @@ if (typeof globalThis.Buffer === "undefined") {
 // --- Config ---
 const ENOKI_BASE = "https://api.enoki.mystenlabs.com/v1";
 const ENOKI_PUBLIC_KEY = process.env.EXPO_PUBLIC_ENOKI_PUBLIC_KEY!;
+const ENOKI_PRIVATE_KEY = process.env.EXPO_PUBLIC_PRIVATE_ENOKI_KEY!;
 type SuiNetwork = "testnet" | "mainnet" | "devnet";
 
 // --- API helper ---
@@ -49,13 +42,20 @@ async function enoki<T>(
   path: string,
   method: string,
   body?: any,
-  jwt?: string
+  jwt?: string,
+  usePrivateKey: boolean = false
 ): Promise<T> {
-  console.log("enoki", `${ENOKI_BASE}${path}`);
-  console.log("enoki", ENOKI_PUBLIC_KEY);
+  const apiKey = usePrivateKey ? ENOKI_PRIVATE_KEY : ENOKI_PUBLIC_KEY;
+
+  // Add validation
+  if (!apiKey) {
+    throw new Error(
+      `Missing Enoki API key (${usePrivateKey ? "private" : "public"})`
+    );
+  }
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${ENOKI_PUBLIC_KEY}`,
+    Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
 
@@ -71,6 +71,13 @@ async function enoki<T>(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    // Log more details for debugging
+    console.error("Enoki API Error:", {
+      status: res.status,
+      statusText: res.statusText,
+      url: `${ENOKI_BASE}${path}`,
+      errorText: text,
+    });
     throw new Error(text || `Enoki request failed: ${res.status}`);
   }
   return res.json() as Promise<T>;
@@ -79,16 +86,20 @@ async function enoki<T>(
 // --- Public API ---
 export function makeEphemeral() {
   const kp = Ed25519Keypair.generate();
-  const publicKey = toB64(kp.getPublicKey().toSuiBytes()); // Changed from toRawBytes() to toSuiBytes()
-  return { keypair: kp, publicKey };
+  const publicKey = toB64(kp.getPublicKey().toSuiBytes());
+
+  // const secretKeyBase64 = encodeSuiPrivateKey(
+  //   new Uint8Array(Buffer.from(secretKey, "base64")),
+  //   "ED25519"
+  // );
+
+  return { kp, publicKey };
 }
 
 export async function getNonce(
   network: SuiNetwork,
   ephemeralPublicKey: string
 ) {
-  console.log("getNonce", network, ephemeralPublicKey);
-
   return enoki<{
     data: {
       nonce: string;
@@ -108,58 +119,16 @@ export async function getNonce(
   );
 }
 
-export async function getZKP(
-  ephemeralPublicKey: string,
-  maxEpoch: number,
-  randomness: string,
-  jwt: string,
-  network: SuiNetwork = "testnet"
-) {
-  console.log("getZKP", {
-    ephemeralPublicKey,
-    maxEpoch,
-    randomness,
-    jwt,
-    network,
-  });
-
-  return enoki<{
-    data: {
-      zkp: string;
-    };
-  }>(
-    "/zklogin/zkp",
-    "POST",
-    JSON.stringify({
-      ephemeralPublicKey,
-      maxEpoch,
-      randomness,
-    }),
-    jwt
-  );
-}
-
 export async function getZkLogin(jwt: string) {
-  console.log("getZkLogin", { jwt });
-
   return enoki<{
     data: {
-      // Add fields that might be returned from zklogin endpoint
       user?: any;
       address?: string;
-      // Add other fields as needed
     };
-  }>(
-    "/zklogin",
-    "GET",
-    undefined, // No body for GET request
-    jwt
-  );
+  }>("/zklogin", "GET", undefined, jwt);
 }
 
 export async function getZkLoginAddresses(jwt: string) {
-  console.log("getZkLoginAddresses", { jwt });
-
   return enoki<{
     data: {
       addresses?: {
@@ -169,14 +138,8 @@ export async function getZkLoginAddresses(jwt: string) {
         clientId: string;
         legacy: boolean;
       }[];
-      // Add other fields that might be returned
     };
-  }>(
-    "/zklogin/addresses",
-    "GET",
-    undefined, // No body for GET request
-    jwt
-  );
+  }>("/zklogin/addresses", "GET", undefined, jwt);
 }
 
 export async function getZkLoginZKP(
@@ -186,18 +149,9 @@ export async function getZkLoginZKP(
   jwt: string,
   network: SuiNetwork = "testnet"
 ) {
-  console.log("getZkLoginZKP", {
-    ephemeralPublicKey,
-    maxEpoch,
-    randomness,
-    jwt,
-    network,
-  });
-
   return enoki<{
     data: {
       zkp: string;
-      // Add other fields that might be returned
     };
   }>(
     "/zklogin/zkp",
@@ -209,5 +163,72 @@ export async function getZkLoginZKP(
       randomness,
     }),
     jwt
+  );
+}
+
+export async function sponsorTransaction(
+  transactionBlockKindBytes: string,
+  network: SuiNetwork,
+  sender: string,
+  jwt: string,
+  allowedAddresses: string[] = [],
+  allowedMoveCallTargets: string[] = []
+) {
+  console.log("sponsorTransaction", {
+    transactionBlockKindBytes,
+    network,
+    sender,
+    allowedAddresses,
+    allowedMoveCallTargets,
+  });
+
+  return enoki<{
+    data: {
+      bytes: string;
+      digest: string;
+      zkp: string;
+    };
+  }>(
+    "/transaction-blocks/sponsor",
+    "POST",
+    JSON.stringify({
+      transactionBlockKindBytes,
+      network,
+      sender,
+      allowedAddresses,
+      allowedMoveCallTargets,
+    }),
+    jwt,
+    true
+  );
+}
+
+export async function signSponsoredTransaction(
+  digest: string,
+  signature: string | undefined,
+  jwt: string
+) {
+  if (!signature) {
+    throw new Error("Signature not found");
+  }
+  console.log("signSponsoredTransaction", {
+    digest,
+    signature: signature,
+  });
+
+  return enoki<{
+    data: {
+      bytes: string;
+      digest: string;
+      zkp?: string;
+    };
+  }>(
+    `/transaction-blocks/sponsor/${digest}`,
+    "POST",
+    JSON.stringify({
+      signature,
+    }),
+    jwt,
+    true
   );
 }
