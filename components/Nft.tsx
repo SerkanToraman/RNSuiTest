@@ -1,6 +1,7 @@
 import "react-native-get-random-values";
 
 import { getFullnodeUrl, SuiClient } from "@mysten/sui/client";
+import { toBase64 } from "@mysten/sui/utils";
 import { Button } from "@rneui/themed";
 
 import { useMemo, useState } from "react";
@@ -49,13 +50,9 @@ export default function Nft() {
         onlyTransactionKind: true,
       });
       console.log("transactionBytes", transactionBytes);
-      console.log(
-        "transactionBytes base64",
-        Buffer.from(transactionBytes).toString("base64")
-      );
 
       const { data } = await sponsorTransaction(
-        Buffer.from(transactionBytes).toString("base64"),
+        toBase64(transactionBytes),
         "testnet",
         user.address,
         idToken,
@@ -65,8 +62,13 @@ export default function Nft() {
 
       console.log("sponsored transaction result", data);
       // // Use the keypair directly
-      // const serializedSignature = (await user.kp.sign(data.bytes)).signature;
-      // console.log("serializedSignature", serializedSignature);
+
+      // const { signature } = await tx.sign({
+      //   client: client,
+      //   signer: user.kp,
+      // });
+
+      // console.log("signature", signature);
 
       // await client.executeTransactionBlock({
       //   transactionBlock: data.bytes,
