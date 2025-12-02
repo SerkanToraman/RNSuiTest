@@ -1,5 +1,6 @@
 // Export all stores
 export {
+  useAuthKeypair,
   useAuthLoading,
   useAuthStore,
   useAuthUser,

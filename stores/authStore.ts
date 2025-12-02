@@ -1,3 +1,5 @@
+import { toB64 } from "@mysten/bcs";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   AuthError,
@@ -50,6 +52,8 @@ interface AuthState {
   idToken: string | null; // For Enoki/Google services
   isLoading: boolean;
   error: AuthError | null;
+  keypair: any | null; // Ephemeral keypair (not persisted)
+  serializedKeypair: string | null; // Serialized keypair for persistence
 }
 
 interface AuthActions {
@@ -58,6 +62,7 @@ interface AuthActions {
   setIdToken: (token: string | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: AuthError | null) => void;
+  setKeypair: (keypair: any | null) => void;
   signOut: () => void;
   fetchWithAuth: (url: string, options?: RequestInit) => Promise<Response>;
   reset: () => void;
@@ -71,7 +76,23 @@ const initialState: AuthState = {
   idToken: null,
   isLoading: false,
   error: null,
+  keypair: null,
+  serializedKeypair: null,
 };
+
+// Helper function to serialize keypair (for potential future use)
+function serializeKeypair(keypair: Ed25519Keypair | null): string | null {
+  if (!keypair) return null;
+  try {
+    const secretKey = keypair.getSecretKey();
+    if (typeof secretKey === "string") {
+      return secretKey;
+    }
+    return toB64(secretKey as unknown as Uint8Array);
+  } catch {
+    return null;
+  }
+}
 
 export const useAuthStore = create<AuthStore>()(
   persist(
@@ -88,6 +109,11 @@ export const useAuthStore = create<AuthStore>()(
 
       setError: (error) => set({ error }),
 
+      setKeypair: (keypair) => {
+        const serialized = serializeKeypair(keypair);
+        set({ keypair, serializedKeypair: serialized });
+      },
+
       signOut: () => {
         set({
           user: null,
@@ -95,6 +121,8 @@ export const useAuthStore = create<AuthStore>()(
           idToken: null,
           isLoading: false,
           error: null,
+          keypair: null,
+          serializedKeypair: null,
         });
       },
 
@@ -119,13 +147,23 @@ export const useAuthStore = create<AuthStore>()(
         user: state.user,
         accessToken: state.accessToken,
         idToken: state.idToken,
+        // Don't persist keypair - ephemeral keypairs should be generated fresh on each login
       }),
+      onRehydrateStorage: () => (state) => {
+        // Don't deserialize keypair - ephemeral keypairs should be generated fresh
+        // Clear any persisted keypair data
+        if (state) {
+          state.keypair = null;
+          state.serializedKeypair = null;
+        }
+      },
     }
   )
 );
 
 // Selectors for better performance
 export const useAuthUser = () => useAuthStore((state) => state.user);
+export const useAuthKeypair = () => useAuthStore((state) => state.keypair);
 // export const useAuthSession = () => useAuthStore((state) => state.session);
 export const useAuthLoading = () => useAuthStore((state) => state.isLoading);
 
@@ -150,6 +188,7 @@ export const useGoogleSignIn = () => {
   const setIdToken = useAuthStore((state) => state.setIdToken);
   const setLoading = useAuthStore((state) => state.setLoading);
   const setError = useAuthStore((state) => state.setError);
+  const setKeypair = useAuthStore((state) => state.setKeypair);
 
   // Ref to store ephemeral data for use in handleResponse
   const ephemeralDataRef = useRef<{
@@ -162,11 +201,26 @@ export const useGoogleSignIn = () => {
   // State for config with nonce
   const [authConfig, setAuthConfig] = useState<AuthRequestConfig>(config);
 
-  // Generate nonce and update config
-  useEffect(() => {
-    const generateNonceAndUpdateConfig = async () => {
-      const { kp, publicKey } = makeEphemeral();
+  // Generate nonce and update config - only when signIn is called
+  const generateNonceAndUpdateConfig = useCallback(async () => {
+    // Guard to prevent multiple executions
+    if (ephemeralDataRef.current) {
+      return;
+    }
 
+    // Don't generate keypair if user is already logged in
+    const currentUser = useAuthStore.getState().user;
+    if (currentUser) {
+      return;
+    }
+
+    const { kp, publicKey } = makeEphemeral();
+    console.log("kp", kp);
+
+    // Store keypair immediately in store
+    setKeypair(kp);
+
+    try {
       const nonceResponse = await getNonce("testnet", publicKey);
       const nonce = nonceResponse.data.nonce;
 
@@ -187,10 +241,10 @@ export const useGoogleSignIn = () => {
       };
 
       setAuthConfig(updatedConfig);
-    };
-
-    generateNonceAndUpdateConfig();
-  }, []);
+    } catch {
+      // Silently handle errors
+    }
+  }, [setKeypair]);
 
   const [request, response, promptAsync] = useAuthRequest(
     authConfig,
@@ -250,7 +304,10 @@ export const useGoogleSignIn = () => {
           user.ephemeralPublicKey = ephemeralDataRef.current.ephemeralPublicKey;
           user.randomness = ephemeralDataRef.current.randomness;
           user.maxEpoch = ephemeralDataRef.current.maxEpoch;
-          user.kp = ephemeralDataRef.current.kp; // Add this
+          // Store keypair in separate state
+          if (ephemeralDataRef.current.kp) {
+            setKeypair(ephemeralDataRef.current.kp);
+          }
         }
 
         // Get ZKLogin addresses using the ORIGINAL Google ID token (not the custom access token)
@@ -269,17 +326,13 @@ export const useGoogleSignIn = () => {
               user.salt = firstAddress.salt;
               user.publicKey = firstAddress.publicKey; // This is the ZKLogin publicKey
             }
-          } catch (zkError: any) {
-            console.error("Error getting ZKLogin addresses:", zkError);
+          } catch {
             // Don't fail the entire auth if ZKLogin fails
           }
-        } else {
-          console.warn("Skipping ZKLogin - no idToken available");
         }
 
         setUser(user);
       } catch (e: any) {
-        console.error("Error handling auth response:", e);
         setError(e as AuthError);
       } finally {
         setLoading(false);
@@ -289,7 +342,15 @@ export const useGoogleSignIn = () => {
     } else if (response?.type === "error") {
       setError(response.error as AuthError);
     }
-  }, [response, setLoading, setAccessToken, setIdToken, setUser, setError]);
+  }, [
+    response,
+    setLoading,
+    setAccessToken,
+    setIdToken,
+    setUser,
+    setError,
+    setKeypair,
+  ]);
 
   // Handle OAuth response
   useEffect(() => {
@@ -298,13 +359,18 @@ export const useGoogleSignIn = () => {
 
   const signIn = async () => {
     try {
+      // Generate keypair and nonce before signing in (if not already generated)
+      if (!ephemeralDataRef.current) {
+        await generateNonceAndUpdateConfig();
+        // Wait for the config to update - useAuthRequest will re-initialize with new config
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+
       if (!request) {
-        console.log("No request");
         return;
       }
       await promptAsync();
     } catch (e: any) {
-      console.error("Sign in error:", e);
       setError(e as AuthError);
     }
   };

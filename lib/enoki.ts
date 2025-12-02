@@ -174,13 +174,13 @@ export async function sponsorTransaction(
   allowedAddresses: string[] = [],
   allowedMoveCallTargets: string[] = []
 ) {
-  console.log("sponsorTransaction", {
-    transactionBlockKindBytes,
-    network,
-    sender,
-    allowedAddresses,
-    allowedMoveCallTargets,
-  });
+  // console.log("sponsorTransaction", {
+  //   transactionBlockKindBytes,
+  //   network,
+  //   sender,
+  //   allowedAddresses,
+  //   allowedMoveCallTargets,
+  // });
 
   return enoki<{
     data: {
@@ -211,10 +211,10 @@ export async function signSponsoredTransaction(
   if (!signature) {
     throw new Error("Signature not found");
   }
-  console.log("signSponsoredTransaction", {
-    digest,
-    signature: signature,
-  });
+  // console.log("signSponsoredTransaction", {
+  //   digest,
+  //   signature: signature,
+  // });
 
   return enoki<{
     data: {

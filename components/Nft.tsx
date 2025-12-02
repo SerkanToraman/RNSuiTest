@@ -8,13 +8,14 @@ import { useMemo, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { createHero } from "../lib/createHero";
 import { sponsorTransaction } from "../lib/enoki";
-import { useAuthStore, useAuthUser } from "../stores";
+import { useAuthKeypair, useAuthStore, useAuthUser } from "../stores";
 
 export default function Nft() {
   const rpcUrl = getFullnodeUrl("testnet");
   const client = useMemo(() => new SuiClient({ url: rpcUrl }), [rpcUrl]);
   const user = useAuthUser();
   const idToken = useAuthStore((state) => state.idToken); // Get idToken from store
+  const keypair = useAuthKeypair(); // Get keypair from store (not persisted)
 
   const [nftLoading, setNftLoading] = useState(false);
   const [createdNft, setCreatedNft] = useState<any>(null);
@@ -26,7 +27,7 @@ export default function Nft() {
       !user?.randomness ||
       !idToken || // Use idToken from store
       !user?.address ||
-      !user?.kp // Add this check
+      !keypair // Check keypair from store
     ) {
       Alert.alert(
         "Missing Data",
@@ -60,15 +61,15 @@ export default function Nft() {
         [`${packageId}::hero::create_hero`]
       );
 
-      console.log("sponsored transaction result", data);
       // // Use the keypair directly
 
-      // const { signature } = await tx.sign({
-      //   client: client,
-      //   signer: user.kp,
-      // });
+      console.log("keypair", keypair);
+      const { bytes, signature } = await tx.sign({
+        client: client,
+        signer: keypair,
+      });
 
-      // console.log("signature", signature);
+      console.log("signature", signature);
 
       // await client.executeTransactionBlock({
       //   transactionBlock: data.bytes,
@@ -82,7 +83,6 @@ export default function Nft() {
       //   idToken,
       //   "testnet"
       // );
-      // console.log("zkp", zkp);
 
       // console.log("bytes", bytes);
       // console.log("userSignature", userSignature);
@@ -117,7 +117,8 @@ export default function Nft() {
           !user?.ephemeralPublicKey ||
           !user?.randomness ||
           !idToken || // Use idToken from store
-          !user?.address
+          !user?.address ||
+          !keypair
         }
         loading={nftLoading}
         buttonStyle={{
